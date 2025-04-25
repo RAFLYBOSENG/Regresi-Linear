@@ -269,13 +269,30 @@ def predict():
         max_price = brand_prices.max()
         min_price = brand_prices.min()
         mean_price = brand_prices.mean()
+        std_price = brand_prices.std()
         
-        # Jika prediksi di luar range yang masuk akal, sesuaikan
-        if prediksi_harga_usd > max_price * 1.5:
-            prediksi_harga_usd = mean_price * 1.2
-        elif prediksi_harga_usd < min_price * 0.5:
-            prediksi_harga_usd = mean_price * 0.8
-            
+        # Batasan yang lebih ketat berdasarkan statistik
+        upper_bound = mean_price + 2 * std_price
+        lower_bound = mean_price - 2 * std_price
+        
+        # Jika prediksi di luar range yang masuk akal, sesuaikan dengan pendekatan yang lebih halus
+        if prediksi_harga_usd > upper_bound:
+            # Gunakan interpolasi linear untuk menyesuaikan prediksi yang terlalu tinggi
+            prediksi_harga_usd = mean_price + (prediksi_harga_usd - mean_price) * 0.3
+        elif prediksi_harga_usd < lower_bound:
+            # Gunakan interpolasi linear untuk menyesuaikan prediksi yang terlalu rendah
+            prediksi_harga_usd = mean_price + (prediksi_harga_usd - mean_price) * 0.3
+        
+        # Tambahkan faktor koreksi berdasarkan merek
+        brand_correction = {
+            'Apple': 1.1,  # Apple cenderung lebih mahal
+            'Samsung': 1.0, # Samsung sebagai baseline
+            'Xiaomi': 0.9   # Xiaomi cenderung lebih terjangkau
+        }
+        
+        # Terapkan faktor koreksi merek
+        prediksi_harga_usd *= brand_correction.get(brand, 1.0)
+        
         # Konversi ke IDR
         prediksi_harga_idr = prediksi_harga_usd * USD_TO_IDR
         
