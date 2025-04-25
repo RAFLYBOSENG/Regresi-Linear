@@ -263,36 +263,57 @@ def predict():
         
         # Prediksi harga dalam USD
         prediksi_harga_usd = model.predict(X_combined)[0]
-        
-        # Normalisasi prediksi jika terlalu tinggi
-        brand_prices = df[df['Company Name'] == brand]['Launched Price (USA)'].apply(clean_price)
-        max_price = brand_prices.max()
-        min_price = brand_prices.min()
-        mean_price = brand_prices.mean()
-        std_price = brand_prices.std()
-        
-        # Batasan yang lebih ketat berdasarkan statistik
-        upper_bound = mean_price + 2 * std_price
-        lower_bound = mean_price - 2 * std_price
-        
-        # Jika prediksi di luar range yang masuk akal, sesuaikan dengan pendekatan yang lebih halus
-        if prediksi_harga_usd > upper_bound:
-            # Gunakan interpolasi linear untuk menyesuaikan prediksi yang terlalu tinggi
-            prediksi_harga_usd = mean_price + (prediksi_harga_usd - mean_price) * 0.3
-        elif prediksi_harga_usd < lower_bound:
-            # Gunakan interpolasi linear untuk menyesuaikan prediksi yang terlalu rendah
-            prediksi_harga_usd = mean_price + (prediksi_harga_usd - mean_price) * 0.3
-        
-        # Tambahkan faktor koreksi berdasarkan merek
-        brand_correction = {
-            'Apple': 1.1,  # Apple cenderung lebih mahal
-            'Samsung': 1.0, # Samsung sebagai baseline
-            'Xiaomi': 0.9   # Xiaomi cenderung lebih terjangkau
-        }
-        
-        # Terapkan faktor koreksi merek
-        prediksi_harga_usd *= brand_correction.get(brand, 1.0)
-        
+
+        # Dapatkan harga pasar yang sesuai berdasarkan spesifikasi
+        similar_phones = []
+        for _, row in df[df['Company Name'] == brand].iterrows():
+            # Hitung skor kemiripan berdasarkan spesifikasi
+            ram_diff = abs(float(row['RAM'].replace('GB', '')) - ram)
+            front_cam_diff = abs(float(row['Front Camera'].split('MP')[0]) - front_camera)
+            back_cam_diff = abs(float(row['Back Camera'].split('MP')[0]) - back_camera)
+            battery_diff = abs(clean_battery(row['Battery Capacity']) - battery) / 1000
+            screen_diff = abs(float(row['Screen Size'].replace(' inches', '')) - screen)
+            
+            # Hitung total perbedaan dengan bobot
+            total_diff = (ram_diff * 0.25 + 
+                         front_cam_diff * 0.15 + 
+                         back_cam_diff * 0.2 + 
+                         battery_diff * 0.2 + 
+                         screen_diff * 0.2)
+            
+            if total_diff < 3:  # Ambil ponsel yang cukup mirip
+                price = clean_price(row['Launched Price (USA)'])
+                similar_phones.append((price, total_diff))
+
+        # Jika ada ponsel yang mirip, gunakan sebagai referensi
+        if similar_phones:
+            # Urutkan berdasarkan kemiripan (diff terkecil)
+            similar_phones.sort(key=lambda x: x[1])
+            
+            # Ambil 3 ponsel terdekat dan hitung rata-rata tertimbang
+            reference_prices = similar_phones[:3]
+            total_weight = sum(1 / (diff + 0.1) for _, diff in reference_prices)
+            weighted_price = sum((price / (diff + 0.1)) / total_weight 
+                                for price, diff in reference_prices)
+            
+            # Tentukan batas atas (105%) dan batas bawah (98%) dari harga referensi
+            upper_limit = weighted_price * 1.05
+            lower_limit = weighted_price * 0.98
+            
+            # Sesuaikan prediksi agar berada dalam range yang diinginkan
+            prediksi_harga_usd = max(min(prediksi_harga_usd, upper_limit), lower_limit)
+        else:
+            # Jika tidak ada ponsel yang mirip, gunakan rata-rata harga brand sebagai patokan
+            brand_prices = df[df['Company Name'] == brand]['Launched Price (USA)'].apply(clean_price)
+            mean_price = brand_prices.mean()
+            
+            # Tentukan batas berdasarkan rata-rata harga brand
+            upper_limit = mean_price * 1.05
+            lower_limit = mean_price * 0.98
+            
+            # Sesuaikan prediksi
+            prediksi_harga_usd = max(min(prediksi_harga_usd, upper_limit), lower_limit)
+
         # Konversi ke IDR
         prediksi_harga_idr = prediksi_harga_usd * USD_TO_IDR
         
